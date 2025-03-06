@@ -150,4 +150,18 @@ class TestAccountService(TestCase):
         response = self.client.delete(f'{BASE_URL}/{account.id}', content_type='application/json')
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+    def test_list_accounts(self):
+        accounts = self._create_accounts(5)
+
+        response = self.client.get(f'{BASE_URL}', content_type='application/json')
+        returned_accounts = response.get_json()['accounts']
+        self.assertEqual(len(returned_accounts), len(accounts))
+        for i in range(len(returned_accounts)):
+            a = returned_accounts[i]
+            self.assertEqual(a['id'], accounts[i].id)
+
+    def test_empty_list(self):
+        response = self.client.get(f'{BASE_URL}', content_type='application/json')
+        returned_accounts = response.get_json()['accounts']
+        self.assertEqual(len(returned_accounts), 0)
 
