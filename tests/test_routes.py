@@ -12,12 +12,14 @@ from tests.factories import AccountFactory
 from service.common import status  # HTTP Status Codes
 from service.models import db, Account, init_db
 from service.routes import app
+from service import talisman
 
 DATABASE_URI = os.getenv(
     "DATABASE_URI", "postgresql://postgres:postgres@localhost:5432/postgres"
 )
 
 BASE_URL = "/accounts"
+HTTPS_ENVIRON = {'wsgi.url_scheme': 'https'}
 
 
 ######################################################################
@@ -34,6 +36,7 @@ class TestAccountService(TestCase):
         app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URI
         app.logger.setLevel(logging.CRITICAL)
         init_db(app)
+        talisman.force_https = False
 
     @classmethod
     def tearDownClass(cls):
@@ -126,7 +129,7 @@ class TestAccountService(TestCase):
     def test_read_account(self):
         """It should read an account"""
         account = self._create_accounts(1)[0]
-        
+
         response = self.client.get(f'{BASE_URL}/{account.id}', content_type='application/json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         found = response.get_json()
@@ -135,7 +138,7 @@ class TestAccountService(TestCase):
         self.assertEqual(account.email, found['email'])
         self.assertEqual(account.address, found['address'])
         self.assertEqual(account.phone_number, found['phone_number'])
-    
+
     def test_fail_read(self):
         """It should fail to read an account with the wrong id"""
         response = self.client.get(f'{BASE_URL}/{0}', content_type='application/json')
@@ -144,7 +147,7 @@ class TestAccountService(TestCase):
     def test_delete_account(self):
         """It should delete an account"""
         account = self._create_accounts(1)[0]
-        
+
         response = self.client.get(f'{BASE_URL}/{account.id}', content_type='application/json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         response = self.client.delete(f'{BASE_URL}/{account.id}', content_type='application/json')
@@ -170,7 +173,7 @@ class TestAccountService(TestCase):
         new_name = 'foo'
         self.assertNotEqual(account.name, new_name)
         account.name = new_name
-        response = self.client.put(f'{BASE_URL}/{account.id}',json=account.serialize(), content_type='application/json')
+        response = self.client.put(f'{BASE_URL}/{account.id}', json=account.serialize(), content_type='application/json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.get_json()
         self.assertEqual(data['name'], new_name)
@@ -184,3 +187,21 @@ class TestAccountService(TestCase):
         resp = self.client.delete(BASE_URL)
         self.assertEqual(resp.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
+    def test_secure_request(self):
+        """It should return security headers"""
+        response = self.client.get('/', environ_overrides=HTTPS_ENVIRON)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        headers = {
+            'X-Frame-Options': 'SAMEORIGIN',
+            'X-Content-Type-Options': 'nosniff',
+            'Content-Security-Policy': 'default-src \'self\'; object-src \'none\'',
+            'Referrer-Policy': 'strict-origin-when-cross-origin'
+        }
+        for key, value in headers.items():
+            self.assertEqual(response.headers.get(key), value)
+
+    def test_cors_policy(self):
+        """It should return a CORS header"""
+        response = self.client.get('/', environ_overrides=HTTPS_ENVIRON)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.headers.get('Access-Control-Allow-Origin'), '*')
